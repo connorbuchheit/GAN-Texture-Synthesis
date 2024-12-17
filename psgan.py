@@ -54,25 +54,17 @@ class Generator(tf.keras.Model):
         self.config = config 
 
         self.periodic_layer = PeriodicLayer(config) # Add the periodic noise layer like above
-        # self.transposed_conv_layers = [] # For upsampling
-        # self.batch_norm_layers = []
-        # for filters, kernel_size in zip(config.gen_fn[:-1], config.gen_ks):
-        #     self.transposed_conv_layers.append( # Add convolutional layers + batchnorm
-        #         layers.Conv2DTranspose(filters, kernel_size, strides=(2,2), padding='same', activation='relu')
-        #     )
-        #     self.batch_norm_layers.append(layers.BatchNormalization()) # add batchnorm layers
+        self.transposed_conv_layers = [] # For upsampling
+        self.batch_norm_layers = []
+        for filters, kernel_size in zip(config.gen_fn[:-1], config.gen_ks):
+            self.transposed_conv_layers.append( # Add convolutional layers + batchnorm
+                layers.Conv2DTranspose(filters, kernel_size, strides=(2,2), padding='same', activation='relu')
+            )
+            self.batch_norm_layers.append(layers.BatchNormalization()) # add batchnorm layers
 
-        # self.final_layer = layers.Conv2DTranspose( # Final output layer from paper — tanh 
-        #     config.gen_fn[-1], config.gen_ks[-1], strides=(2, 2), padding="same", activation="tanh"
-        # )
-
-        self.transposed_conv_layers = [
-            layers.Conv2DTranspose(512, (4, 4), strides=(2, 2), padding="same", activation="relu"),  # 6x6 -> 12x12
-            layers.Conv2DTranspose(256, (4, 4), strides=(2, 2), padding="same", activation="relu"),  # 12x12 -> 24x24
-            layers.Conv2DTranspose(128, (4, 4), strides=(2, 2), padding="same", activation="relu"),  # 24x24 -> 48x48
-            layers.Conv2DTranspose(64, (4, 4), strides=(2, 2), padding="same", activation="relu")   # 48x48 -> 96x96
-        ]
-        self.final_layer = layers.Conv2DTranspose(3, (4, 4), strides=(2, 2), padding="same", activation="tanh")  # 96x96 -> 128x128
+        self.final_layer = layers.Conv2DTranspose( # Final output layer from paper — tanh 
+            config.gen_fn[-1], config.gen_ks[-1], strides=(2, 2), padding="same", activation="tanh"
+        )
 
 
     def call(self, Z):
