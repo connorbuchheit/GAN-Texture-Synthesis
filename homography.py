@@ -69,52 +69,42 @@ def generate_homography_unwarp(img):
     ], dtype=np.float32)
 
     # Find corners in the warped image 
-    corners_old, corner_marked_img = detect_shi_tomasi_corners(np.pad(cv2.cvtColor(img, cv2.COLOR_BGR2GRAY), 20))
-
-    plt.imshow(corner_marked_img)
+    corners_old = detect_corners(img)
 
     # Compute the homography matrix
     H, _ = cv2.findHomography(corners_old, corners_new)
     return H
 
-def detect_shi_tomasi_corners(img, max_corners=4, quality_level=0.1, min_distance=None):
-    """
-    Detect corners in an image using the Shi-Tomasi corner detection method.
-    
-    INPUTS:
-        img (np.ndarray): Input grayscale image.
-        max_corners (int): Maximum number of corners to return.
-        quality_level (float): Minimum accepted quality of corners (0–1).
-        min_distance (int): Minimum distance between detected corners.
-        
-    OUTPUTS:
-        corners: Coordinates of detected corners (x, y).
-        corner_marked_img: Image with corners marked.
-    """
-    # Convert to grayscale if the image is not already
-    if len(img.shape) == 3:
-        img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
 
-    if min_distance == None:
-        min_distance = min(img.shape[0], img.shape[1])
+# LOOK INTO WRAPPING THE BELOW CODE IN RANSAC TO IMPROVE RESULTS
+def detect_corners(image):
+    '''
+    Detect corners in warped image with black space around it from homography
 
-    # Detect corners using Shi-Tomasi method
-    corners = cv2.goodFeaturesToTrack(
-        img,
-        maxCorners=max_corners,
-        qualityLevel=quality_level,
-        minDistance=min_distance
-    )
-    
-    # Convert corner points to integer coordinates
-    corners = np.int0(corners).reshape(-1, 2)
-    
-    # Create a copy of the image to mark the corners
-    corner_marked_img = img.copy()
-    if len(corner_marked_img.shape) == 2:  # Convert grayscale to BGR for visualization
-        corner_marked_img = cv2.cvtColor(corner_marked_img, cv2.COLOR_GRAY2BGR)
-    
-    for x, y in corners:  # Mark the corners in red
-        cv2.circle(corner_marked_img, (x, y), 3, (0, 0, 255), -1)
-    
-    return corners, corner_marked_img
+    INPUT: 
+        image (np.ndarray): Warped input image
+
+    OUTPUT:
+        vertices (np.ndarray): the four bounding vertices of image  
+    '''
+    # Step 1: Edge detection using Canny
+    image = np.pad(cv2.cvtColor(image, cv2.COLOR_BGR2GRAY),20)*255
+    image[image > 0] = 255
+
+    edges = cv2.Canny(np.uint8(image), 50, 150)
+
+    # Step 2: Find contours in the edge-detected image
+    contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+    # Step 3: Find the largest contour (by area)
+    largest_contour = max(contours, key=cv2.contourArea)
+
+    # Step 4: Approximate the contour to a quadrilateral
+    epsilon = 0.02 * cv2.arcLength(largest_contour, True)  # Approximation accuracy
+    approx = cv2.approxPolyDP(largest_contour, epsilon, True)
+
+    if len(approx) == 4:  # Ensure it's a quadrilateral
+        vertices = approx.reshape(4, 2)
+        return vertices
+    else:
+        raise ValueError("Unable to find exactly 4 vertices. Adjust parameters.")
