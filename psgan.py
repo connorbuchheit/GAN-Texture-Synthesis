@@ -1,6 +1,5 @@
 import tensorflow as tf
 from tensorflow.keras import layers
-from config import Config
 # Inspired from "Learning Texture Manifolds with the Periodic Spatial GAN” by Bergmann et al., 2017,
 # updated in TensorFlow rather than LASAGNE because modern technology rules
 
@@ -86,7 +85,7 @@ class Discriminator(tf.keras.Model):
             self.batch_norm_layers.append(layers.BatchNormalization())
 
         self.flatten = layers.Flatten() # Final classification layer for probablity
-        self.final_layer = layers.Dense(1, activation='sigmoid')
+        self.final_layer = layers.Dense(1) # Removed sigmoid here in favor of applying it in BinaryCrossentropy in train.py (logits=True)
 
     def call(self, X):
         x = X # Similarly, forward pass
