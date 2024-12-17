@@ -1,11 +1,4 @@
 # Same config.py as done in the paper.
-import os 
-from tools import create_dir 
-from data_io import get_texture_iter 
-
-create_dir('samples')
-create_dir('models') # create directories for samples and model if none
-
 def zx_to_npx(zx, depth):
     '''
     Calculate size of output image given depth of network and input field size
