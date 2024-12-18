@@ -54,42 +54,43 @@ class Generator(tf.keras.Model):
         self.config = config 
 
         self.periodic_layer = PeriodicLayer(config) # Add the periodic noise layer like above
-        # self.transposed_conv_layers = [] # For upsampling
-        # self.batch_norm_layers = []
-        # for filters, kernel_size in zip(config.gen_fn[:-1], config.gen_ks):
-        #     self.transposed_conv_layers.append( # Add convolutional layers + batchnorm
-        #         layers.Conv2DTranspose(filters, kernel_size, strides=(2,2), padding='same', activation='relu')
-        #     )
-        #     self.batch_norm_layers.append(layers.BatchNormalization()) # add batchnorm layers
-        # self.final_layer = layers.Conv2DTranspose( # Final output layer from paper — tanh 
-        #     config.gen_fn[-1], config.gen_ks[-1], strides=(2, 2), padding="same", activation="tanh"
-        # )
-        self.transposed_conv_layers = [] # For upsampling
-        self.batch_norm_layers = []
-        for filters, kernel_size in zip(config.gen_fn[:-1], config.gen_ks):
-            self.transposed_conv_layers.append( # Add convolutional layers + batchnorm
-                layers.Conv2DTranspose(filters, kernel_size, strides=(2,2), padding='same', activation='relu')
-            )
-            self.batch_norm_layers.append(layers.BatchNormalization()) # add batchnorm layers
-
-        self.transposed_conv_layers = [
-            layers.Conv2DTranspose(512, (4, 4), strides=(2, 2), padding="same", activation="relu"),  # 6x6 -> 12x12
-            layers.Conv2DTranspose(256, (4, 4), strides=(2, 2), padding="same", activation="relu"),  # 12x12 -> 24x24
-            layers.Conv2DTranspose(128, (4, 4), strides=(2, 2), padding="same", activation="relu"),  # 24x24 -> 48x48
-            layers.Conv2DTranspose(64, (4, 4), strides=(2, 2), padding="same", activation="relu")   # 48x48 -> 96x96
+        
+        self.conv_layers = [ # Zickler conv layers
+            layers.Conv2DTranspose(512, (5, 5), strides=(2,2), padding='valid', activation='relu'),
+            layers.Conv2DTranspose(256, (5, 5), strides=(2,2), padding='valid', activation='relu'),
+            layers.Conv2DTranspose(128, (5, 5), strides=(2,2), padding='valid', activation='relu'),
+            layers.Conv2DTranspose(64, (5, 5), strides=(2,2), padding='valid', activation='relu'),
         ]
-        self.final_layer = layers.Conv2DTranspose(3, (4, 4), strides=(2, 2), padding="same", activation="tanh")  # 96x96 -> 128x128
-        self.final_layer = layers.Conv2DTranspose( # Final output layer from paper — tanh 
-            config.gen_fn[-1], config.gen_ks[-1], strides=(2, 2), padding="same", activation="tanh"
+
+        self.batch_norm_layers = [layers.BatchNormalization() for _ in range(len(self.conv_layers))]
+        self.final_layer = layers.Conv2DTranspose(
+            3, (5,5), strides=(2,2), padding='valid', activation='tanh'
         )
+
+    def crop_size(self, tensor, target_height, target_width): # crop like Zickler
+        input_shape = tf.shape(tensor)
+        crop_height = (input_shape[1] - target_height) // 2 
+        crop_width = (input_shape[2] - target_width) // 2
+        return tf.image.crop_to_bounding_box(tensor, crop_height, crop_width, target_height, target_width)
 
 
     def call(self, Z):
         x = self.periodic_layer(Z) # Periodic layer --> conv --> bn --> final
-        for conv, bn in zip(self.transposed_conv_layers, self.batch_norm_layers):
+        # for conv, bn in zip(self.transposed_conv_layers, self.batch_norm_layers):
+        #     x = conv(x)
+        #     x = bn(x) # Alternate convolution and batch norm 
+        # x = self.final_layer(x)
+        current_size = self.config.initial_size + 3
+        for i, (conv, bn) in enumerate(zip(self.conv_layers, self.batch_norm_layers)):
             x = conv(x)
-            x = bn(x) # Alternate convolution and batch norm 
+            current_size = 2 * current_size - 3 
+            print(f"Layer {i}: Expected size = {current_size}, Actual tensor size = {x.shape[1]}x{x.shape[2]}")
+            x = self.crop_size(x, current_size, current_size)
+            x = bn(x)
         x = self.final_layer(x)
+        # final_size = 2 ** len(self.conv_layers) * self.config.initial_size
+        final_size = 128 # rather arbitrarily chosen.
+        x = self.crop_size(x, final_size, final_size)
         print(f"Generator Output Shape: {x.shape}")
         return x
 
@@ -121,3 +122,4 @@ class Discriminator(tf.keras.Model):
             print(f"Shape after conv and batch norm: {x.shape}")
         x = self.flatten(x)
         print(f"Shape after flattening: {x.shape}")  # Debugging
+        return self.final_layer(x)

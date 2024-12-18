@@ -34,6 +34,7 @@ class Config:
         self.zx = 6
         self.zx_sample = 32
         self.zx_sample_quilt = self.zx_sample / 4
+        self.initial_size = 15 # change if needed
 
         # network params from paper
         self.nc = 3

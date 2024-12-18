@@ -40,7 +40,7 @@ def train_step(real_images):
     1) Updating the discriminator.
     2) Updating the generator.
     '''
-    noise = generate_noise(config.batch_size, config.nz, config.zx) # Make noise
+    noise = generate_noise(config.batch_size, 50, 50) # Make noise
     print(f"Noise Shape: {tf.shape(noise)}")
 
     # Update discriminator
@@ -86,7 +86,7 @@ def train(dataset, epochs):
             generator.save_weights(f"models/generator_epoch_{epoch + 1}")
             discriminator.save_weights(f"models/discriminator_epoch_{epoch + 1}")
 
-def load_and_preprocess_images(image_dir, target_size=(161, 161), batch_size=25):
+def load_and_preprocess_images(image_dir, target_size=(128, 128), batch_size=25):
     """
     Load images from a directory, resize to target size, normalize to [-1, 1], and batch them.
     Inputs:
@@ -117,7 +117,7 @@ if __name__ == "__main__":
     # Step 1) Need a method to preprocess dataset
     # AKA have dataset of images w predefined dimensions, 
     # Normalized between -1 and 1.
-    print(f"Expected dimension: {config.npx}")
+    # print(f"Expected dimension: {config.npx}")
     print(f"zx: {config.zx}")
     images_dir = Path(__file__).resolve().parent / "dtd_folder" / "dtd" / "images" / "meshed"
     print("Loading images!")
