@@ -6,6 +6,7 @@ from config import Config
 from psgan import Generator, Discriminator
 import os
 from pathlib import Path
+import matplotlib.pyplot as plt
 
 config = Config() # Initialize configuration of NN
 generator = Generator(config)
@@ -19,7 +20,7 @@ bce_loss = BinaryCrossentropy(from_logits=True) # from_logits for more stablity 
 def generate_noise(batch_size, nz, zx): # Function for input noise
     return tf.random.normal([batch_size, nz, zx, zx])
 
-def save_generated_images(images, epoch, samples_dir='samples'):
+def save_generated_images(images, epoch, samples_dir='samples_chequered'):
     images = (images + 1.0) * 127.5
     images = tf.clip_by_value(images, 0, 255).numpy().astype(np.uint8)
     os.makedirs(samples_dir, exist_ok=True)
@@ -30,8 +31,8 @@ def save_generated_images(images, epoch, samples_dir='samples'):
 
 fixed_noise = generate_noise(1, config.nz, config.zx_sample) # Generate noise
 
-os.makedirs('samples', exist_ok=True) # Create directory to write stuff to to reuse
-os.makedirs('models', exist_ok=True)
+os.makedirs('samples_chequered', exist_ok=True) # Create directory to write stuff to to reuse
+os.makedirs('models_chequered', exist_ok=True)
 
 @tf.function
 def train_step(real_images):
@@ -83,8 +84,8 @@ def train(dataset, epochs):
         save_generated_images(gen_images, epoch)
         
         if (epoch + 1) % 10 == 0: # Save model weights per 10th iteration
-            generator.save_weights(f"models/generator_epoch_{epoch + 1}")
-            discriminator.save_weights(f"models/discriminator_epoch_{epoch + 1}")
+            generator.save_weights(f"models/generator_epoch_{epoch + 1}.weights.h5")
+            discriminator.save_weights(f"models/discriminator_epoch_{epoch + 1}.weights.h5")
 
 def load_and_preprocess_images(image_dir, target_size=(128, 128), batch_size=25):
     """
@@ -113,16 +114,37 @@ def load_and_preprocess_images(image_dir, target_size=(128, 128), batch_size=25)
     dataset = dataset.prefetch(tf.data.AUTOTUNE)
     return dataset
 
+def visualize_dataset_images(dataset, num_images=5):
+    """
+    Visualize a batch of images from the dataset.
+    Inputs:
+        dataset: TensorFlow dataset of images.
+        num_images: Number of images to display.
+    """
+    # Extract one batch of images
+    for images in dataset.take(1):
+        images = (images + 1.0) / 2.0  # Rescale from [-1, 1] to [0, 1]
+        images = tf.clip_by_value(images, 0.0, 1.0)  # Ensure no values outside [0, 1]
+        
+        plt.figure(figsize=(15, 5))
+        for i in range(num_images):
+            plt.subplot(1, num_images, i + 1)
+            plt.imshow(images[i].numpy())
+            plt.axis("off")
+            plt.title(f"Image {i+1}")
+        plt.tight_layout()
+        plt.show()
+        break
+
 if __name__ == "__main__":
     # Step 1) Need a method to preprocess dataset
     # AKA have dataset of images w predefined dimensions, 
     # Normalized between -1 and 1.
     # print(f"Expected dimension: {config.npx}")
-    print(f"zx: {config.zx}")
-    images_dir = Path(__file__).resolve().parent / "dtd_folder" / "dtd" / "images" / "meshed"
+    images_dir = Path(__file__).resolve().parent / "dtd_folder" / "dtd" / "images" / "chequered"
     print("Loading images!")
     dataset = load_and_preprocess_images(images_dir, target_size=(128, 128), batch_size=config.batch_size)
-
+    visualize_dataset_images(dataset)
 
     print("Starting PSGAN training...wish me luck")
     train(dataset, epochs=config.epoch_count)
