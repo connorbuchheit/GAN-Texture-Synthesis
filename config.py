@@ -31,7 +31,7 @@ class Config:
         self.nz_periodic_MLPnodes = 50
         self.nz = self.nz_local + self.nz_global + self.nz_periodic * 2 
         self.periodic_affine = False 
-        self.zx = 6
+        self.zx = 32
         self.zx_sample = 32
         self.zx_sample_quilt = self.zx_sample / 4
         self.initial_size = 15 # change if needed

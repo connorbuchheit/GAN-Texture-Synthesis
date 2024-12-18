@@ -40,7 +40,7 @@ def train_step(real_images):
     1) Updating the discriminator.
     2) Updating the generator.
     '''
-    noise = generate_noise(config.batch_size, 50, 50) # Make noise
+    noise = generate_noise(config.batch_size, 32, config.zx) # Make noise
     print(f"Noise Shape: {tf.shape(noise)}")
 
     # Update discriminator
