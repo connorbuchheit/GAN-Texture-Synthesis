@@ -4,46 +4,65 @@ import numpy as np
 # Inspired from "Learning Texture Manifolds with the Periodic Spatial GAN” by Bergmann et al., 2017,
 # updated in TensorFlow rather than LASAGNE because modern technology rules
 
-class PeriodicLayer(tf.keras.layers.Layer):
-    '''
-    The custom layer defined in the paper to add periodic noise to input tensor
-    Meant to help GAN generator learn textures with periodic patterns.
-    '''
+class NoiseGenerator:
+    """
+    Layer to generate periodic noise maps and concatenate them with input tensors.
+    """
     def __init__(self, config):
-        '''
-        Config params defined in config.py — used same ones in paper.
-        '''
-        super().__init__()
-        self.config = config 
+        self.dim_z_periodic = config.dim_z_periodic
+        self.dim_z_local = config.dim_z_local
+        self.spatial_size = config.spatial_size # INIITALIZED IN CONFIG AS EXAMPLE: CHANGE IF NEEDED
+        self.K = tf.Variable(
+            initial_value=tf.random.normal([2, self.dim_z_periodic], stddev=0.1),
+            trainable=True,
+            name="wave_numbers"
+        )
+            
+    def generate_local_noise(self, batch_size):
+        height, width = self.spatial_size
+        local_noise = tf.random.uniform(
+            shape=(batch_size, height, width, self.dim_z_local),
+            minval=-1.0, maxval=1.0
+        )
+        return local_noise
+    
+    def generate_periodic_noise(self, batch_size):
+        height, width = self.spatial_size
+        x = tf.range(width, dtype=tf.float32)
+        y = tf.range(height, dtype=tf.float32)
+        x, y = tf.meshgrid(x, y)
 
-    def call(self, Z): 
-        '''
-        Method to add periodic noise to Z.
-        Input: Z—input tensor of shape [batch_size, channels, height, width]
-        Output: Tensor with additional periodic noise concatenated
-        '''
-        if self.config.nz_periodic == 0:
-            return Z
+        # Should be of shape [height, width, 2]
+        coordinates = tf.stack([x, y], axis=-1)
 
-        nPeriodic = self.config.nz_periodic
-        batch_size, channels, zx, _ = Z.shape
+        # Random phase offsets from 0 to 2π
+        phi = tf.random.uniform(
+            shape=(self.dim_z_periodic,), minval=0.0, maxval=2 * np.pi
+        )  # Should be of shape [dim_z_periodic]
 
-        periodic_noise = []
-        for i in range(1, nPeriodic + 1):
-            freq = (0.5 * i / nPeriodic) + 0.5
-            x_indices = tf.range(zx, dtype=tf.float32) * freq
-            y_indices = tf.range(zx, dtype=tf.float32) * freq
+        # Compute the dot product between wave numbers K and coordinates
+        # Shape of self.K: [2, dim_z_periodic]
+        # Resulting shape: [height, width, dim_z_periodic] 
+        wave_patterns = tf.tensordot(coordinates, self.K, axes=1)
 
-            sin_wave = tf.sin(x_indices)[:, None] + tf.sin(y_indices)[None, :]
-            cos_wave = tf.cos(x_indices)[:, None] + tf.cos(y_indices)[None, :]
-            periodic_noise.extend([sin_wave, cos_wave])
+        # Add phase offsets
+        wave_patterns = wave_patterns + phi  # Broadcast phi across spatial dimensions
 
-        periodic_noise = tf.stack(periodic_noise, axis=0)  # Shape: (2 * nPeriodic, zx, zx)
-        periodic_noise = periodic_noise[None, :, :, :]  # Add batch dimension
-        periodic_noise = tf.tile(periodic_noise, [batch_size, 1, 1, 1])  # Repeat for batch size
-        periodic_noise += tf.random.uniform(periodic_noise.shape) * 2 * np.pi  # Add random phase
+        # Apply sinusoid
+        periodic_maps = tf.sin(wave_patterns)  # Shape: [height, width, dim_z_periodic]
 
-        return tf.concat([Z, tf.sin(periodic_noise)], axis=1)  # Concatenate with Z
+        # Expand batch dimension and tile
+        periodic_maps = tf.tile(
+            periodic_maps[None, :, :, :], [batch_size, 1, 1, 1]
+        )  # Shape: [batch_size, height, width, dim_z_periodic]
+
+        return periodic_maps
+
+    def generate_noise(self, batch_size):
+        local_noise = self.generate_local_noise(batch_size)
+        periodic_noise = self.generate_periodic_noise(batch_size)
+        return tf.concat([local_noise, periodic_noise], axis=-1)
+
 
 class Generator(tf.keras.Model):
     '''
@@ -52,8 +71,6 @@ class Generator(tf.keras.Model):
     def __init__(self, config):
         super(Generator, self).__init__()
         self.config = config 
-
-        self.periodic_layer = PeriodicLayer(config) # Add the periodic noise layer like above
         
         self.conv_layers = [ # Zickler conv layers
             layers.Conv2DTranspose(512, (5, 5), strides=(2,2), padding='valid', activation='relu'),
@@ -74,25 +91,14 @@ class Generator(tf.keras.Model):
         return tf.image.crop_to_bounding_box(tensor, crop_height, crop_width, target_height, target_width)
 
 
-    def call(self, Z):
-        x = self.periodic_layer(Z) # Periodic layer --> conv --> bn --> final
-        # for conv, bn in zip(self.transposed_conv_layers, self.batch_norm_layers):
-        #     x = conv(x)
-        #     x = bn(x) # Alternate convolution and batch norm 
-        # x = self.final_layer(x)
-        current_size = self.config.initial_size + 3
-        for i, (conv, bn) in enumerate(zip(self.conv_layers, self.batch_norm_layers)):
+    def call(self, local_noise, global_noise, random_phases, training=False):
+        x = self.periodic_layer(local_noise, global_noise, random_phases, training=training)
+        for conv, bn in zip(self.conv_layers, self.batch_norm_layers):
             x = conv(x)
-            current_size = 2 * current_size - 3 
-            print(f"Layer {i}: Expected size = {current_size}, Actual tensor size = {x.shape[1]}x{x.shape[2]}")
-            x = self.crop_size(x, current_size, current_size)
-            x = bn(x)
-        x = self.final_layer(x)
-        # final_size = 2 ** len(self.conv_layers) * self.config.initial_size
-        final_size = 128 # rather arbitrarily chosen.
-        x = self.crop_size(x, final_size, final_size)
-        print(f"Generator Output Shape: {x.shape}")
-        return x
+            x = bn(x, training=training)
+            if i in []:
+                x = self.periodic_layer(x, global_noise, random_phases, training=training)
+        return self.final_layer(x)
 
 class Discriminator(tf.keras.Model):
     '''

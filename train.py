@@ -17,8 +17,22 @@ disc_optimizer = Adam(learning_rate=config.lr, beta_1=config.b1) # Keep separate
 
 bce_loss = BinaryCrossentropy(from_logits=True) # from_logits for more stablity w sigmoid
 
-def generate_noise(batch_size, nz, zx): # Function for input noise
-    return tf.random.normal([batch_size, nz, zx, zx])
+# Updated noise sampling
+def generate_noise(batch_size, nz_local, nz_periodic, zx):
+    Z = np.zeros((batch_size, nz_local + 2 * nz_periodic, zx, zx))  # No global maps
+
+    # Local maps
+    Z[:, :nz_local] = np.random.uniform(-1., 1., (batch_size, nz_local, zx, zx))
+
+    # Periodic maps
+    for i in range(1, nz_periodic + 1):
+        freq = np.pi * (0.5 * i / nz_periodic + 0.5)
+        for h in range(zx):
+            Z[:, nz_local + 2 * (i - 1), :, h] = h * freq  # Horizontal sine wave
+        for w in range(zx):
+            Z[:, nz_local + 2 * (i - 1) + 1, w, :] = w * freq  # Vertical cosine wave
+    return tf.convert_to_tensor(Z, dtype=tf.float32)
+
 
 def save_generated_images(images, epoch, samples_dir='samples_chequered'):
     images = (images + 1.0) * 127.5
@@ -29,7 +43,7 @@ def save_generated_images(images, epoch, samples_dir='samples_chequered'):
             f"{samples_dir}/generated_epoch_{epoch + 1}_img_{i + 1}.png", img
         )
 
-fixed_noise = generate_noise(1, config.nz, config.zx_sample) # Generate noise
+fixed_noise = generate_noise(1, config.nz_local, config.nz_periodic, config.zx_sample) # Generate noise
 
 os.makedirs('samples_chequered', exist_ok=True) # Create directory to write stuff to to reuse
 os.makedirs('models_chequered', exist_ok=True)
@@ -41,7 +55,7 @@ def train_step(real_images):
     1) Updating the discriminator.
     2) Updating the generator.
     '''
-    noise = generate_noise(config.batch_size, 32, config.zx) # Make noise
+    noise = generate_noise(config.batch_size, config.nz_local, config.nz_periodic, config.zx) # Make noise
     print(f"Noise Shape: {tf.shape(noise)}")
 
     # Update discriminator

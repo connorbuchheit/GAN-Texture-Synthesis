@@ -35,6 +35,9 @@ class Config:
         self.zx_sample = 32
         self.zx_sample_quilt = self.zx_sample / 4
         self.initial_size = 15 # change if needed
+        self.global_mlp_units = 60
+        self.dim_z_periodic = 2
+        self.dim_z_local = 10
 
         # network params from paper
         self.nc = 3
