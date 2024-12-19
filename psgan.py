@@ -91,13 +91,12 @@ class Generator(tf.keras.Model):
         return tf.image.crop_to_bounding_box(tensor, crop_height, crop_width, target_height, target_width)
 
 
-    def call(self, local_noise, global_noise, random_phases, training=False):
-        x = self.periodic_layer(local_noise, global_noise, random_phases, training=training)
+    def call(self, local_noise, random_phases, training=False):
+        x = self.periodic_layer(local_noise, random_phases, training=training)
         for conv, bn in zip(self.conv_layers, self.batch_norm_layers):
             x = conv(x)
             x = bn(x, training=training)
-            if i in []:
-                x = self.periodic_layer(x, global_noise, random_phases, training=training)
+
         return self.final_layer(x)
 
 class Discriminator(tf.keras.Model):
