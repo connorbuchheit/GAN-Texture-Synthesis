@@ -19,16 +19,20 @@ class NoiseGenerator:
             name="wave_numbers"
         )
             
-    def generate_local_noise(self, batch_size):
-        height, width = self.spatial_size
+    def generate_local_noise(self, batch_size, shape=None):
+        if shape is None:
+            shape = self.spatial_size
+        height, width = shape
         local_noise = tf.random.uniform(
             shape=(batch_size, height, width, self.dim_z_local),
             minval=-1.0, maxval=1.0
         )
         return local_noise
     
-    def generate_periodic_noise(self, batch_size):
-        height, width = self.spatial_size
+    def generate_periodic_noise(self, batch_size, shape=None):
+        if shape is None:
+            shape = self.spatial_size 
+        height, width = shape
         x = tf.range(width, dtype=tf.float32)
         y = tf.range(height, dtype=tf.float32)
         x, y = tf.meshgrid(x, y)
@@ -59,9 +63,11 @@ class NoiseGenerator:
 
         return periodic_maps
 
-    def generate_noise(self, batch_size):
-        local_noise = self.generate_local_noise(batch_size)
-        periodic_noise = self.generate_periodic_noise(batch_size)
+    def generate_noise(self, batch_size, shape=None):
+        if shape is None:
+            shape = self.spatial_size
+        local_noise = self.generate_local_noise(batch_size, shape)
+        periodic_noise = self.generate_periodic_noise(batch_size, shape)
         return tf.concat([local_noise, periodic_noise], axis=-1)
 
 
@@ -72,12 +78,13 @@ class Generator(tf.keras.Model):
     def __init__(self, config):
         super(Generator, self).__init__()
         self.config = config 
+        self.noise_gen = NoiseGenerator(config)
         
         self.conv_layers = [ # Zickler conv layers
             # layers.Conv2DTranspose(512, (5, 5), strides=(2,2), padding='valid', activation='relu'),
-            layers.Conv2DTranspose(256, (5, 5), strides=(2,2), padding='valid', activation='relu'),
-            layers.Conv2DTranspose(128, (5, 5), strides=(2,2), padding='valid', activation='relu'),
-            layers.Conv2DTranspose(64, (5, 5), strides=(2,2), padding='valid', activation='relu'),
+            layers.Conv2DTranspose(256, (5, 5), strides=(2,2), padding='valid', activation='relu', kernel_initializer='glorot_uniform'),
+            layers.Conv2DTranspose(128, (5, 5), strides=(2,2), padding='valid', activation='relu', kernel_initializer='glorot_uniform'),
+            layers.Conv2DTranspose(64, (5, 5), strides=(2,2), padding='valid', activation='relu', kernel_initializer='glorot_uniform'),
             # layers.Conv2DTranspose(32, (5, 5), strides=(2,2), padding='valid', activation='relu')
         ]
 
@@ -87,13 +94,25 @@ class Generator(tf.keras.Model):
         )
 
 
-    def call(self, noise, training=False):
-        x = noise
-        for conv, bn in zip(self.conv_layers, self.batch_norm_layers):
+    def call(self, training=False):
+        x = self.noise_gen.generate_noise(self.config.batch_size, shape=self.config.spatial_size)
+        for i, (conv, bn) in enumerate(zip(self.conv_layers, self.batch_norm_layers)):
             # print(x.shape)
             x = conv(x)
             x = bn(x, training=training)
             x = x[:, 3:-3, 3:-3, :] # crop 3 pixels from each side bufferwise
+            current_shape = x.shape[1:3]  # Extract height and width
+            
+            # Add periodic noise after the first layer (and train on periodic noise)
+            if i == 0:
+                periodic_noise = self.noise_gen.generate_periodic_noise(x.shape[0], shape=current_shape)
+                x = tf.concat([x, periodic_noise], axis=-1)
+            
+            # Add local noise after the second and third layers
+            if i in [1, 2]:
+                local_noise = self.noise_gen.generate_local_noise(x.shape[0], shape=current_shape)
+                x = tf.concat([x, local_noise], axis=-1)
+
         # print(f"After loop: {x.shape}")
         x = self.final_layer(x)
         # print(f"Final:{x.shape}")
@@ -106,14 +125,15 @@ class Discriminator(tf.keras.Model):
     def __init__(self, config):
         super(Discriminator, self).__init__()
         self.config = config
-        self.conv_layers = []
-        self.batch_norm_layers = []
 
-        for filters, kernel_size in zip(config.dis_fn, config.dis_ks):
-            self.conv_layers.append( # Similar architecture as Generator 
-                layers.Conv2D(filters, kernel_size, strides=(2, 2), padding="same", activation=None)
-            )
-            self.batch_norm_layers.append(layers.BatchNormalization())
+        self.conv_layers = [ # Zickler conv layers
+            layers.Conv2D(64, (5, 5), strides=(2,2), padding='same', activation=None),
+            layers.Conv2D(128, (5, 5), strides=(2,2), padding='same', activation=None),
+            layers.Conv2D(256, (5, 5), strides=(2,2), padding='same', activation=None),
+        ]
+
+        self.batch_norm_layers = [None] + [layers.BatchNormalization() for _ in range(len(self.conv_layers) - 1)]
+        # self.batch_norm_layers = [layers.BatchNormalization() for _ in range(len(self.conv_layers))]
 
         self.flatten = layers.Flatten() # Final classification layer for probablity
         self.final_layer = layers.Dense(1) # Removed sigmoid here in favor of applying it in BinaryCrossentropy in train.py (logits=True)
@@ -123,27 +143,18 @@ class Discriminator(tf.keras.Model):
         for conv, bn in zip(self.conv_layers, self.batch_norm_layers):
             x = conv(x)
             x = tf.nn.leaky_relu(x, alpha=0.2)
-            x = bn(x)
-            print(f"Shape after conv and batch norm: {x.shape}")
+            if bn:
+                x = bn(x)
+            # print(f"Shape after conv and batch norm: {x.shape}")
         x = self.flatten(x)
-        print(f"Shape after flattening: {x.shape}")  # Debugging
+        # print(f"Shape after flattening: {x.shape}")  # Debugging
         return self.final_layer(x)
     
 config = Config()
-
-# Batch size for testing
-batch_size = 1
-
-# Initialize NoiseGenerator
-noise_gen = NoiseGenerator(config)
-
-# Generate noise
-noise = noise_gen.generate_noise(batch_size)
-print("Noise shape:", noise.shape)
 
 # Initialize Generator
 generator = Generator(config)
 
 # Pass noise through the generator
-output = generator(noise, training=False)
+output = generator(training=False)
 print("Generated output shape:", output.shape)
