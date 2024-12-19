@@ -1,6 +1,7 @@
 import tensorflow as tf
 from tensorflow.keras import layers
 import numpy as np
+from config import Config
 # Inspired from "Learning Texture Manifolds with the Periodic Spatial GAN” by Bergmann et al., 2017,
 # updated in TensorFlow rather than LASAGNE because modern technology rules
 
@@ -13,7 +14,7 @@ class NoiseGenerator:
         self.dim_z_local = config.dim_z_local
         self.spatial_size = config.spatial_size # INIITALIZED IN CONFIG AS EXAMPLE: CHANGE IF NEEDED
         self.K = tf.Variable(
-            initial_value=tf.random.normal([2, self.dim_z_periodic], stddev=0.1),
+            initial_value=tf.random.normal([2, self.dim_z_periodic], stddev=0.5),
             trainable=True,
             name="wave_numbers"
         )
@@ -73,7 +74,7 @@ class Generator(tf.keras.Model):
         self.config = config 
         
         self.conv_layers = [ # Zickler conv layers
-            layers.Conv2DTranspose(512, (5, 5), strides=(2,2), padding='valid', activation='relu'),
+            # layers.Conv2DTranspose(512, (5, 5), strides=(2,2), padding='valid', activation='relu'),
             layers.Conv2DTranspose(256, (5, 5), strides=(2,2), padding='valid', activation='relu'),
             layers.Conv2DTranspose(128, (5, 5), strides=(2,2), padding='valid', activation='relu'),
             layers.Conv2DTranspose(64, (5, 5), strides=(2,2), padding='valid', activation='relu'),
@@ -81,24 +82,21 @@ class Generator(tf.keras.Model):
 
         self.batch_norm_layers = [layers.BatchNormalization() for _ in range(len(self.conv_layers))]
         self.final_layer = layers.Conv2DTranspose(
-            3, (5,5), strides=(2,2), padding='valid', activation='tanh'
+            3, (5,5), strides=(2,2), padding='same', activation='tanh'
         )
 
-    def crop_size(self, tensor, target_height, target_width): # crop like Zickler
-        input_shape = tf.shape(tensor)
-        crop_height = (input_shape[1] - target_height) // 2 
-        crop_width = (input_shape[2] - target_width) // 2
-        return tf.image.crop_to_bounding_box(tensor, crop_height, crop_width, target_height, target_width)
 
-
-    def call(self, local_noise, global_noise, random_phases, training=False):
-        x = self.periodic_layer(local_noise, global_noise, random_phases, training=training)
+    def call(self, noise, training=False):
+        x = noise
         for conv, bn in zip(self.conv_layers, self.batch_norm_layers):
+            # print(x.shape)
             x = conv(x)
             x = bn(x, training=training)
-            if i in []:
-                x = self.periodic_layer(x, global_noise, random_phases, training=training)
-        return self.final_layer(x)
+            x = x[:, 3:-3, 3:-3, :] # crop 3 pixels from each side bufferwise
+        # print(f"After loop: {x.shape}")
+        x = self.final_layer(x)
+        # print(f"Final:{x.shape}")
+        return x[:, 3:-3, 3:-3, :]
 
 class Discriminator(tf.keras.Model):
     '''
@@ -112,7 +110,7 @@ class Discriminator(tf.keras.Model):
 
         for filters, kernel_size in zip(config.dis_fn, config.dis_ks):
             self.conv_layers.append( # Similar architecture as Generator 
-                layers.Conv2D(filters, kernel_size, strides=(2, 2), padding="same", activation=None)
+                layers.Conv2D(filters, kernel_size, strides=(2, 2), padding="valid", activation=None)
             )
             self.batch_norm_layers.append(layers.BatchNormalization())
 
@@ -129,3 +127,22 @@ class Discriminator(tf.keras.Model):
         x = self.flatten(x)
         print(f"Shape after flattening: {x.shape}")  # Debugging
         return self.final_layer(x)
+    
+config = Config()
+
+# Batch size for testing
+batch_size = 1
+
+# Initialize NoiseGenerator
+noise_gen = NoiseGenerator(config)
+
+# Generate noise
+noise = noise_gen.generate_noise(batch_size)
+print("Noise shape:", noise.shape)
+
+# Initialize Generator
+generator = Generator(config)
+
+# Pass noise through the generator
+output = generator(noise, training=False)
+print("Generated output shape:", output.shape)

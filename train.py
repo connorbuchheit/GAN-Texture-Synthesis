@@ -3,7 +3,7 @@ from tensorflow.keras.optimizers import Adam
 from tensorflow.keras.losses import BinaryCrossentropy
 import numpy as np
 from config import Config
-from psgan import Generator, Discriminator
+from psgan import Generator, Discriminator, NoiseGenerator
 import os
 from pathlib import Path
 import matplotlib.pyplot as plt
@@ -17,24 +17,8 @@ disc_optimizer = Adam(learning_rate=config.lr, beta_1=config.b1) # Keep separate
 
 bce_loss = BinaryCrossentropy(from_logits=True) # from_logits for more stablity w sigmoid
 
-# Updated noise sampling
-def generate_noise(batch_size, nz_local, nz_periodic, zx):
-    Z = np.zeros((batch_size, nz_local + 2 * nz_periodic, zx, zx))  # No global maps
 
-    # Local maps
-    Z[:, :nz_local] = np.random.uniform(-1., 1., (batch_size, nz_local, zx, zx))
-
-    # Periodic maps
-    for i in range(1, nz_periodic + 1):
-        freq = np.pi * (0.5 * i / nz_periodic + 0.5)
-        for h in range(zx):
-            Z[:, nz_local + 2 * (i - 1), :, h] = h * freq  # Horizontal sine wave
-        for w in range(zx):
-            Z[:, nz_local + 2 * (i - 1) + 1, w, :] = w * freq  # Vertical cosine wave
-    return tf.convert_to_tensor(Z, dtype=tf.float32)
-
-
-def save_generated_images(images, epoch, samples_dir='samples_chequered'):
+def save_generated_images(images, epoch, samples_dir='samples_honeycomb'):
     images = (images + 1.0) * 127.5
     images = tf.clip_by_value(images, 0, 255).numpy().astype(np.uint8)
     os.makedirs(samples_dir, exist_ok=True)
@@ -43,10 +27,13 @@ def save_generated_images(images, epoch, samples_dir='samples_chequered'):
             f"{samples_dir}/generated_epoch_{epoch + 1}_img_{i + 1}.png", img
         )
 
-fixed_noise = generate_noise(1, config.nz_local, config.nz_periodic, config.zx_sample) # Generate noise
+os.makedirs('samples_honeycomb', exist_ok=True) # Create directory to write stuff to to reuse
+os.makedirs('models_honeycomb', exist_ok=True)
 
-os.makedirs('samples_chequered', exist_ok=True) # Create directory to write stuff to to reuse
-os.makedirs('models_chequered', exist_ok=True)
+noise_gen = NoiseGenerator(config)
+
+# fixed_noise = noise_gen.generate_noise(batch_size=25) # Generate noise
+fixed_noise = noise_gen.generate_noise(batch_size=1)
 
 @tf.function
 def train_step(real_images):
@@ -55,7 +42,8 @@ def train_step(real_images):
     1) Updating the discriminator.
     2) Updating the generator.
     '''
-    noise = generate_noise(config.batch_size, config.nz_local, config.nz_periodic, config.zx) # Make noise
+    # noise = noise_gen.generate_noise(batch_size=25)
+    noise = noise_gen.generate_noise(batch_size=1)
     print(f"Noise Shape: {tf.shape(noise)}")
 
     # Update discriminator
@@ -95,11 +83,12 @@ def train(dataset, epochs):
             if step % 100 == 0:
                 print(f"Step {step}: Generator Loss: {gen_loss:.4f}, Disciminator loss: {disc_loss:.4f}")
         gen_images = generator(fixed_noise, training=False)
-        save_generated_images(gen_images, epoch)
+        # save_generated_images(gen_images, epoch)
         
-        if (epoch + 1) % 10 == 0: # Save model weights per 10th iteration
-            generator.save_weights(f"models/generator_epoch_{epoch + 1}.weights.h5")
-            discriminator.save_weights(f"models/discriminator_epoch_{epoch + 1}.weights.h5")
+        if (epoch + 1) % 25 == 0: # Save model weights per 100th iteration
+            generator.save_weights(f"models_honeycomb/generator_epoch_{epoch + 1}.weights.h5")
+            discriminator.save_weights(f"models_honeycomb/discriminator_epoch_{epoch + 1}.weights.h5")
+            save_generated_images(gen_images, epoch)
 
 def load_and_preprocess_images(image_dir, target_size=(128, 128), batch_size=25):
     """
@@ -128,7 +117,7 @@ def load_and_preprocess_images(image_dir, target_size=(128, 128), batch_size=25)
     dataset = dataset.prefetch(tf.data.AUTOTUNE)
     return dataset
 
-def visualize_dataset_images(dataset, num_images=5):
+def visualize_dataset_images(dataset, num_images=1):
     """
     Visualize a batch of images from the dataset.
     Inputs:
@@ -155,7 +144,7 @@ if __name__ == "__main__":
     # AKA have dataset of images w predefined dimensions, 
     # Normalized between -1 and 1.
     # print(f"Expected dimension: {config.npx}")
-    images_dir = Path(__file__).resolve().parent / "dtd_folder" / "dtd" / "images" / "chequered"
+    images_dir = Path(__file__).resolve().parent / "dtd_folder" / "dtd" / "images" / "z_training" 
     print("Loading images!")
     dataset = load_and_preprocess_images(images_dir, target_size=(128, 128), batch_size=config.batch_size)
     visualize_dataset_images(dataset)
