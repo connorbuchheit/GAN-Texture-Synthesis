@@ -110,7 +110,7 @@ class Discriminator(tf.keras.Model):
 
         for filters, kernel_size in zip(config.dis_fn, config.dis_ks):
             self.conv_layers.append( # Similar architecture as Generator 
-                layers.Conv2D(filters, kernel_size, strides=(2, 2), padding="valid", activation=None)
+                layers.Conv2D(filters, kernel_size, strides=(2, 2), padding="same", activation=None)
             )
             self.batch_norm_layers.append(layers.BatchNormalization())
 

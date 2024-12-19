@@ -37,7 +37,7 @@ class Config:
         self.initial_size = 15 # change if needed
         self.dim_z_periodic = 2
         self.dim_z_local = 10
-        self.spatial_size = (11,11) # EXAMPLE! CHANGE , I DO 11 because 8+3=11, M=8
+        self.spatial_size = (13,13) # EXAMPLE! CHANGE , I DO 11 because 8+3=11, M=8
 
         # network params from paper
         self.nc = 3

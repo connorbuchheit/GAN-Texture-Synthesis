@@ -7,6 +7,7 @@ from psgan import Generator, Discriminator, NoiseGenerator
 import os
 from pathlib import Path
 import matplotlib.pyplot as plt
+from utils import load_and_preprocess_single_image, load_and_preprocess_images, visualize_dataset_images
 
 config = Config() # Initialize configuration of NN
 generator = Generator(config)
@@ -27,8 +28,8 @@ def save_generated_images(images, epoch, samples_dir='samples_honeycomb'):
             f"{samples_dir}/generated_epoch_{epoch + 1}_img_{i + 1}.png", img
         )
 
-os.makedirs('samples_honeycomb', exist_ok=True) # Create directory to write stuff to to reuse
-os.makedirs('models_honeycomb', exist_ok=True)
+os.makedirs('models_honeycomb', exist_ok=True) # Create directory to write stuff to to reuse
+os.makedirs('samples_honeycomb', exist_ok=True)
 
 noise_gen = NoiseGenerator(config)
 
@@ -90,63 +91,15 @@ def train(dataset, epochs):
             discriminator.save_weights(f"models_honeycomb/discriminator_epoch_{epoch + 1}.weights.h5")
             save_generated_images(gen_images, epoch)
 
-def load_and_preprocess_images(image_dir, target_size=(128, 128), batch_size=25):
-    """
-    Load images from a directory, resize to target size, normalize to [-1, 1], and batch them.
-    Inputs:
-        image_dir (str): Path to the directory containing images.
-        target_size (tuple): Target size for the images (height, width). For our nn, do 161x161 this is specified.
-        batch_size (int): Batch size for loading.
-        
-    Outputs:
-        Dataset, A TensorFlow dataset of preprocessed images.
-    """
-    # Load and resize images from directory
-    dataset = tf.keras.utils.image_dataset_from_directory(
-        image_dir,
-        label_mode=None, # No label needed for GAN
-        image_size=target_size,  
-        batch_size=batch_size,
-        shuffle=True
-    )
-
-    # Normalize between -1 and 1
-    dataset = dataset.map(lambda x: (x / 127.5) - 1.0, num_parallel_calls=tf.data.AUTOTUNE)
-
-    # Prefetching improves performance
-    dataset = dataset.prefetch(tf.data.AUTOTUNE)
-    return dataset
-
-def visualize_dataset_images(dataset, num_images=1):
-    """
-    Visualize a batch of images from the dataset.
-    Inputs:
-        dataset: TensorFlow dataset of images.
-        num_images: Number of images to display.
-    """
-    # Extract one batch of images
-    for images in dataset.take(1):
-        images = (images + 1.0) / 2.0  # Rescale from [-1, 1] to [0, 1]
-        images = tf.clip_by_value(images, 0.0, 1.0)  # Ensure no values outside [0, 1]
-        
-        plt.figure(figsize=(15, 5))
-        for i in range(num_images):
-            plt.subplot(1, num_images, i + 1)
-            plt.imshow(images[i].numpy())
-            plt.axis("off")
-            plt.title(f"Image {i+1}")
-        plt.tight_layout()
-        plt.show()
-        break
-
 if __name__ == "__main__":
     # Step 1) Need a method to preprocess dataset
     # AKA have dataset of images w predefined dimensions, 
     # Normalized between -1 and 1.
     # print(f"Expected dimension: {config.npx}")
     images_dir = Path(__file__).resolve().parent / "dtd_folder" / "dtd" / "images" / "z_training" 
+    # image_path = Path(__file__).resolve().parent / "dtd_folder" / "dtd" / "images" / "z_training" / "honeycombed_0003.jpg"
     print("Loading images!")
-    dataset = load_and_preprocess_images(images_dir, target_size=(128, 128), batch_size=config.batch_size)
+    dataset = load_and_preprocess_images(images_dir, target_size=(160, 160))
     visualize_dataset_images(dataset)
 
     print("Starting PSGAN training...wish me luck")
