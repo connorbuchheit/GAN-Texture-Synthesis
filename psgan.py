@@ -14,7 +14,7 @@ class NoiseGenerator:
         self.dim_z_local = config.dim_z_local
         self.spatial_size = config.spatial_size # INIITALIZED IN CONFIG AS EXAMPLE: CHANGE IF NEEDED
         self.K = tf.Variable(
-            initial_value=tf.random.normal([2, self.dim_z_periodic], stddev=0.5),
+            initial_value=tf.random.normal([2, self.dim_z_periodic], stddev=0.1),
             trainable=True,
             name="wave_numbers"
         )
@@ -78,6 +78,7 @@ class Generator(tf.keras.Model):
             layers.Conv2DTranspose(256, (5, 5), strides=(2,2), padding='valid', activation='relu'),
             layers.Conv2DTranspose(128, (5, 5), strides=(2,2), padding='valid', activation='relu'),
             layers.Conv2DTranspose(64, (5, 5), strides=(2,2), padding='valid', activation='relu'),
+            # layers.Conv2DTranspose(32, (5, 5), strides=(2,2), padding='valid', activation='relu')
         ]
 
         self.batch_norm_layers = [layers.BatchNormalization() for _ in range(len(self.conv_layers))]

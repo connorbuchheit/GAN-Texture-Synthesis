@@ -19,7 +19,6 @@ class Config:
     b1 = 0.5 # adam momentum term
     l2_fac = 1e-8 # L2 weight reg
     epoch_count = 1000 # training epochs
-    k = 1 # D updates vs G updates
     batch_size = 25
     epoch_iters = batch_size * 1000 # steps per epoch 
 
@@ -35,9 +34,9 @@ class Config:
         self.zx_sample = 32
         self.zx_sample_quilt = self.zx_sample / 4
         self.initial_size = 15 # change if needed
-        self.dim_z_periodic = 2
+        self.dim_z_periodic = 4
         self.dim_z_local = 10
-        self.spatial_size = (13,13) # EXAMPLE! CHANGE , I DO 11 because 8+3=11, M=8
+        self.spatial_size = (11,11) # EXAMPLE! CHANGE , I DO 11 because 8+3=11, M=8
 
         # network params from paper
         self.nc = 3

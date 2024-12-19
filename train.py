@@ -12,6 +12,7 @@ from utils import load_and_preprocess_single_image, load_and_preprocess_images, 
 config = Config() # Initialize configuration of NN
 generator = Generator(config)
 discriminator = Discriminator(config) # Initialize generator and discriminator models
+wd_mult = 0.0001 # weight decay multiplier
 
 gen_optimizer = Adam(learning_rate=config.lr, beta_1=config.b1) # Initialize both optimiizers
 disc_optimizer = Adam(learning_rate=config.lr, beta_1=config.b1) # Keep separate due to two diff objective functions
@@ -37,7 +38,7 @@ noise_gen = NoiseGenerator(config)
 fixed_noise = noise_gen.generate_noise(batch_size=1)
 
 @tf.function
-def train_step(real_images):
+def train_step(real_images, train_gen_only=False):
     '''
     Perform one training step for PSGAN, which entails:
     1) Updating the discriminator.
@@ -48,25 +49,34 @@ def train_step(real_images):
     print(f"Noise Shape: {tf.shape(noise)}")
 
     # Update discriminator
-    with tf.GradientTape() as gg:
-        gen_images = generator(noise, training=True)
-        real_output = discriminator(real_images, training=True) # Check discernment
-        fake_output = discriminator(gen_images, training=True)
+    if not train_gen_only:
+        with tf.GradientTape() as dg:
+            gen_images = generator(noise, training=True)
+            real_output = discriminator(real_images, training=True) # Check discernment
+            fake_output = discriminator(gen_images, training=True)
 
-        real_loss = bce_loss(tf.ones_like(real_output), real_output)
-        fake_loss = bce_loss(tf.zeros_like(fake_output), fake_output) # Real: 1s, fake: 0s
-        disc_loss = real_loss + fake_loss 
+            real_loss = bce_loss(tf.ones_like(real_output), real_output)
+            fake_loss = bce_loss(tf.zeros_like(fake_output), fake_output) # Real: 1s, fake: 0s
+            discriminator_kernels = discriminator.trainable_variables  # Replace with the kernel weights of the discriminator
+            d_wd = wd_mult * tf.add_n([tf.nn.l2_loss(kernel) for kernel in discriminator_kernels])
+            disc_loss = d_wd + real_loss + fake_loss
 
-    disc_grads = gg.gradient(disc_loss, discriminator.trainable_variables)
-    disc_optimizer.apply_gradients(zip(disc_grads, discriminator.trainable_variables))
+        disc_grads = dg.gradient(disc_loss, discriminator.trainable_variables)
+        disc_optimizer.apply_gradients(zip(disc_grads, discriminator.trainable_variables))
+    else:
+        disc_loss = None
 
     # Update generator
-    with tf.GradientTape() as dg:
+    with tf.GradientTape() as gg:
         gen_images = generator(noise, training=True)
         fake_output = discriminator(gen_images, training=True)
+        generator_kernels = generator.trainable_variables  # Replace with the kernel weights of the generator
+        g_wd = wd_mult * tf.add_n([tf.nn.l2_loss(kernel) for kernel in generator_kernels])
+        gen_loss = g_wd + bce_loss(tf.ones_like(fake_output), fake_output)
+
         gen_loss = bce_loss(tf.ones_like(fake_output), fake_output) # Generator wins if discriminator says its real
 
-    gen_grads = dg.gradient(gen_loss, generator.trainable_variables)
+    gen_grads = gg.gradient(gen_loss, generator.trainable_variables)
     gen_optimizer.apply_gradients(zip(gen_grads, generator.trainable_variables))
     return gen_loss, disc_loss 
 
@@ -74,17 +84,20 @@ def train(dataset, epochs):
     '''
     Train PSGAN model for given # of epochs
     '''
+    step_counter = 0 
     for epoch in range(epochs):
         print(f"Epoch {epoch+1}/{epochs}")
+        train_gen_only = (step_counter % 5 != 0)
         gen_losses = []
         disc_losses = []
         for step, real_images in enumerate(dataset):
-            gen_loss, disc_loss = train_step(real_images) # Go through dataset
+            gen_loss, disc_loss = train_step(real_images, train_gen_only) # Go through dataset
             gen_losses.append(gen_loss); disc_losses.append(disc_loss)
-            if step % 100 == 0:
+            if step_counter % 100 == 0:
                 print(f"Step {step}: Generator Loss: {gen_loss:.4f}, Disciminator loss: {disc_loss:.4f}")
         gen_images = generator(fixed_noise, training=False)
         # save_generated_images(gen_images, epoch)
+        step_counter += 1
         
         if (epoch + 1) % 25 == 0: # Save model weights per 100th iteration
             generator.save_weights(f"models_honeycomb/generator_epoch_{epoch + 1}.weights.h5")
@@ -99,7 +112,8 @@ if __name__ == "__main__":
     images_dir = Path(__file__).resolve().parent / "dtd_folder" / "dtd" / "images" / "z_training" 
     # image_path = Path(__file__).resolve().parent / "dtd_folder" / "dtd" / "images" / "z_training" / "honeycombed_0003.jpg"
     print("Loading images!")
-    dataset = load_and_preprocess_images(images_dir, target_size=(160, 160))
+    # dataset = load_and_preprocess_single_image(str(image_path), crop_size=(96, 96))
+    dataset = load_and_preprocess_images(images_dir, target_size=(128, 128))
     visualize_dataset_images(dataset)
 
     print("Starting PSGAN training...wish me luck")
