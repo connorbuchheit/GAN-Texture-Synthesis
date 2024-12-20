@@ -22,7 +22,7 @@ disc_optimizer = Adam(learning_rate=(config.lr * 0.1), beta_1=config.b1) # Keep 
 bce_loss = BinaryCrossentropy(from_logits=True) # from_logits for more stablity w sigmoid
 
 
-def save_generated_images(images, epoch, samples_dir='samples_honeycomb'):
+def save_generated_images(images, epoch, samples_dir='samples_chequered'):
     images = (images + 1.0) * 127.5
     images = tf.clip_by_value(images, 0, 255).numpy().astype(np.uint8)
     os.makedirs(samples_dir, exist_ok=True)
@@ -31,8 +31,8 @@ def save_generated_images(images, epoch, samples_dir='samples_honeycomb'):
             f"{samples_dir}/generated_epoch_{epoch + 1}_img_{i + 1}.png", img
         )
 
-os.makedirs('models_honeycomb', exist_ok=True) # Create directory to write stuff to to reuse
-os.makedirs('samples_honeycomb', exist_ok=True)
+os.makedirs('models_chequered', exist_ok=True) # Create directory to write stuff to to reuse
+os.makedirs('samples_chequered', exist_ok=True)
 
 # fixed_noise = noise_gen.generate_noise(batch_size=25) # Generate noise
 # fixed_noise = noise_gen.generate_noise(batch_size=1)
@@ -110,22 +110,22 @@ def train(dataset, epochs, log_file="gradient_logs.txt"):
         step_counter += 1
         
         if (epoch + 1) % 25 == 0: # Save model weights per 100th iteration
-            generator.save_weights(f"models_honeycomb/generator_epoch_{epoch + 1}.weights.h5")
-            discriminator.save_weights(f"models_honeycomb/discriminator_epoch_{epoch + 1}.weights.h5")
+            generator.save_weights(f"models_chequered/generator_epoch_{epoch + 1}.weights.h5")
+            discriminator.save_weights(f"models_chequered/discriminator_epoch_{epoch + 1}.weights.h5")
             save_generated_images(gen_images, epoch)
 
-if __name__ == "__main__":
-    # Step 1) Need a method to preprocess dataset
-    # AKA have dataset of images w predefined dimensions, 
-    # Normalized between -1 and 1.
-    # print(f"Expected dimension: {config.npx}")
-    images_dir = Path(__file__).resolve().parent / "dtd_folder" / "dtd" / "images" / "z_training" 
-    # image_path = Path(__file__).resolve().parent / "dtd_folder" / "dtd" / "images" / "z_training" / "honeycombed_0003.jpg"
-    print("Loading images!")
-    # dataset = load_and_preprocess_single_image(str(image_path), crop_size=(96, 96))
-    dataset = load_and_preprocess_images(images_dir, target_size=(160, 160))
-    visualize_dataset_images(dataset)
+# if __name__ == "__main__":
+#     # Step 1) Need a method to preprocess dataset
+#     # AKA have dataset of images w predefined dimensions, 
+#     # Normalized between -1 and 1.
+#     # print(f"Expected dimension: {config.npx}")
+#     images_dir = Path(__file__).resolve().parent / "dtd_folder" / "dtd" / "images" / "z_training" 
+#     # image_path = Path(__file__).resolve().parent / "dtd_folder" / "dtd" / "images" / "z_training" / "honeycombed_0003.jpg"
+#     print("Loading images!")
+#     # dataset = load_and_preprocess_single_image(str(image_path), crop_size=(96, 96))
+#     dataset = load_and_preprocess_images(images_dir, target_size=(160, 160))
+#     visualize_dataset_images(dataset)
 
-    print("Starting PSGAN training...wish me luck")
-    train(dataset, epochs=config.epoch_count)
-    print("Training complete! Check 'samples/' for generated images and 'models/' for saved models.")
+#     print("Starting PSGAN training...wish me luck")
+#     train(dataset, epochs=config.epoch_count)
+#     print("Training complete! Check 'samples/' for generated images and 'models/' for saved models.")

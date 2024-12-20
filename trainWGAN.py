@@ -4,6 +4,7 @@ from tensorflow.keras.losses import BinaryCrossentropy
 import numpy as np
 from config import Config
 from psgan import Generator, Discriminator, NoiseGenerator
+import homography
 import os
 from pathlib import Path
 import matplotlib.pyplot as plt
@@ -53,7 +54,7 @@ def compute_gradient_penalty(discriminator, real_images, fake_images):
     gradient_penalty = tf.reduce_mean((gradients_l2 - 1.0) ** 2)
     return gradient_penalty
 
-def save_generated_images(images, epoch, samples_dir='samples_honeycomb'):
+def save_generated_images(images, epoch, samples_dir='samples_chequered'):
     images = (images + 1.0) * 127.5
     images = tf.clip_by_value(images, 0, 255).numpy().astype(np.uint8)
     os.makedirs(samples_dir, exist_ok=True)
@@ -62,8 +63,8 @@ def save_generated_images(images, epoch, samples_dir='samples_honeycomb'):
             f"{samples_dir}/generated_epoch_{epoch + 1}_img_{i + 1}.png", img
         )
 
-os.makedirs('models_honeycomb', exist_ok=True) # Create directory to write stuff to to reuse
-os.makedirs('samples_honeycomb', exist_ok=True)
+os.makedirs('models_chequered', exist_ok=True) # Create directory to write stuff to to reuse
+os.makedirs('samples_chequered', exist_ok=True)
 
 # fixed_noise = noise_gen.generate_noise(batch_size=25) # Generate noise
 # fixed_noise = noise_gen.generate_noise(batch_size=1)
@@ -110,12 +111,20 @@ def train_step(real_images, train_gen_only=False):
             # Discriminator loss
             loss_d = discriminator_loss(real_output, fake_output, gradient_penalty)
 
-        disc_grads = dg.gradient(loss_d, discriminator.trainable_variables)
+            # homography layer doesn't do as well as omitting it... for now
+            
+            # inverse_homography_layer = discriminator.homography_layer
+            # estimated_homography = inverse_homography_layer(real_images)
+            # warped_fake_images = tf.map_fn(lambda x: homography.apply_homography(x, estimated_homography), gen_images)
+            # reconstruction_loss = tf.reduce_mean(tf.square(real_images - warped_fake_images))
+            total_discriminator_loss = loss_d #+ reconstruction_loss
+
+        disc_grads = dg.gradient(total_discriminator_loss, discriminator.trainable_variables)
         disc_optimizer.apply_gradients(zip(disc_grads, discriminator.trainable_variables))
 
         # log_gradients_to_file(step_no, disc_grads, label="Discriminator Gradients")
     else:
-        loss_d = None
+        total_discriminator_loss = None
 
     # Update generator
     with tf.GradientTape() as gg:
@@ -126,20 +135,20 @@ def train_step(real_images, train_gen_only=False):
     gen_grads = gg.gradient(loss_g, generator.trainable_variables)
     gen_optimizer.apply_gradients(zip(gen_grads, generator.trainable_variables))
     # log_gradients_to_file(step_no, gen_grads, label="Generator Gradients")
-    return loss_g, loss_d, gen_images # Return losses AND geneated images 
+    return loss_g, total_discriminator_loss, gen_images # Return losses AND geneated images 
 
 def train(dataset, epochs, log_file="gradient_logs.txt"):
     '''
     Train PSGAN model for given # of epochs
     '''
+    gen_losses = []
+    disc_losses = []
     step_counter = 0 
     with open(log_file, "w") as f:
         f.write("Gradient Logs:\n\n")
     for epoch in range(epochs):
         print(f"Epoch {epoch+1}/{epochs}")
         train_gen_only = (step_counter % 5 != 0)
-        gen_losses = []
-        disc_losses = []
         for step, real_images in enumerate(dataset):
             gen_loss, disc_loss, gen_images = train_step(real_images, train_gen_only) # Go through dataset
             gen_losses.append(gen_loss); disc_losses.append(disc_loss)
@@ -149,22 +158,18 @@ def train(dataset, epochs, log_file="gradient_logs.txt"):
         step_counter += 1
         
         if (epoch + 1) % 25 == 0: # Save model weights per 100th iteration
-            generator.save_weights(f"models_honeycomb/generator_epoch_{epoch + 1}.weights.h5")
-            discriminator.save_weights(f"models_honeycomb/discriminator_epoch_{epoch + 1}.weights.h5")
+            generator.save_weights(f"models_chequered/generator_epoch_{epoch + 1}.weights.h5")
+            discriminator.save_weights(f"models_chequered/discriminator_epoch_{epoch + 1}.weights.h5")
             save_generated_images(gen_images, epoch)
 
-if __name__ == "__main__":
-    # Step 1) Need a method to preprocess dataset
-    # AKA have dataset of images w predefined dimensions, 
-    # Normalized between -1 and 1.
-    # print(f"Expected dimension: {config.npx}")
-    images_dir = Path(__file__).resolve().parent / "dtd_folder" / "dtd" / "images" / "z_training" 
-    # image_path = Path(__file__).resolve().parent / "dtd_folder" / "dtd" / "images" / "z_training" / "honeycombed_0003.jpg"
-    print("Loading images!")
-    # dataset = load_and_preprocess_single_image(str(image_path), crop_size=(96, 96))
-    dataset = load_and_preprocess_images(images_dir, target_size=(160, 160))
-    visualize_dataset_images(dataset)
+            with open('gen_losses.txt', 'w') as gen_file:
+                gen_file.writelines(f"{loss}\n" for loss in gen_losses)
+        
+            # Save discriminator losses
+            with open('disc_losses.txt', 'w') as disc_file:
+                disc_file.writelines(f"{loss}\n" for loss in disc_losses)
+            
+            print(f"Saved losses to files at epoch {epoch}")
 
-    print("Starting PSGAN training...wish me luck")
-    train(dataset, epochs=config.epoch_count)
-    print("Training complete! Check 'samples/' for generated images and 'models/' for saved models.")
+
+    return gen_losses, disc_losses

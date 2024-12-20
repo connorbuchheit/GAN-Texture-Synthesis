@@ -2,8 +2,34 @@ import tensorflow as tf
 from tensorflow.keras import layers
 import numpy as np
 from config import Config
+from tensorflow.keras.layers import Dense, Flatten
 # Inspired from "Learning Texture Manifolds with the Periodic Spatial GAN” by Bergmann et al., 2017,
 # updated in TensorFlow rather than LASAGNE because modern technology rules
+
+class InverseHomographyLayer(layers.Layer):
+    def __init__(self):
+        super(InverseHomographyLayer, self).__init__()
+
+        # Define sub-layers or parameters needed for homography computation.
+        self.conv = layers.Conv2D(64, (3, 3), activation='relu', padding='same')
+        self.flatten = layers.Flatten()
+        self.fc = layers.Dense(8)  # 8 parameters for 3x3 homography matrix (excluding last element, set to 1)
+
+    def call(self, inputs):
+        # Feature extraction
+        x = self.conv(inputs)
+        x = self.flatten(x)
+        h_params = self.fc(x)
+        append_tensor = tf.constant([[1.0]])
+        h_params = tf.concat([h_params, append_tensor], axis=-1) 
+
+        # Construct the homography matrix
+        h_matrix = tf.reshape(h_params, (-1, 3, 3))
+        # Inverse the homography matrix
+        h_inverse = tf.linalg.inv(h_matrix)
+        h_matrix = tf.concat([h_matrix, tf.ones([tf.shape(h_matrix)[0], tf.shape(h_matrix)[1], 1])], axis=2)
+
+        return h_inverse
 
 class NoiseGenerator:
     """
@@ -135,17 +161,21 @@ class Discriminator(tf.keras.Model):
         self.batch_norm_layers = [None] + [layers.BatchNormalization() for _ in range(len(self.conv_layers) - 1)]
         # self.batch_norm_layers = [layers.BatchNormalization() for _ in range(len(self.conv_layers))]
 
+        self.homography_layer = InverseHomographyLayer()
+
         self.flatten = layers.Flatten() # Final classification layer for probablity
         self.final_layer = layers.Dense(1) # Removed sigmoid here in favor of applying it in BinaryCrossentropy in train.py (logits=True)
 
     def call(self, X):
         x = X # Similarly, forward pass
+        h_inverse = self.homography_layer(x) # estimate homography using real and warped images
         for conv, bn in zip(self.conv_layers, self.batch_norm_layers):
             x = conv(x)
             x = tf.nn.leaky_relu(x, alpha=0.2)
             if bn:
                 x = bn(x)
             # print(f"Shape after conv and batch norm: {x.shape}")
+
         x = self.flatten(x)
         # print(f"Shape after flattening: {x.shape}")  # Debugging
         return self.final_layer(x)

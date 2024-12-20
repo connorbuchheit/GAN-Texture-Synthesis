@@ -1,6 +1,7 @@
 import numpy as np
 import cv2
 from sklearn.cluster import KMeans
+import tensorflow as tf
 import matplotlib.pyplot as plt
 
 def generate_homography_warp(img_size):
@@ -54,7 +55,19 @@ def apply_homography(img, H):
     OUTPUT:
         warped_img: Warped image.
     """
+
+    # If eager execution is not enabled, enable it
+    tf.config.run_functions_eagerly(True)  # Optional: This ensures eager execution mode is active
+
+    if isinstance(H, tf.Tensor):
+        # Ensure eager execution is enabled to evaluate tensors
+        H = H[0].numpy() if H is not None else None
+    else:
+        H = np.array(H, dtype= np.float32)
+
     h, w = img.shape[:2]
+    img = np.array(img).reshape((h, w, 3))
+    
     warped_img = cv2.warpPerspective(img, H, (w, h))
     return warped_img
 
@@ -111,8 +124,6 @@ def generate_homography_unwarp(warped_img):
 
     return Hpp
 
-
-# LOOK INTO WRAPPING THE BELOW CODE IN RANSAC TO IMPROVE RESULTS
 def detect_corners(img):
     '''
     Detect corners in warped image with black space around it from homography using Harris corner detector
@@ -189,21 +200,21 @@ def sort_corners(vertices):
     #     raise ValueError("Unable to find exactly 4 vertices. Adjust parameters.")
 
 
-    ## junk code for generate_homography_unwarp
-    # h, w = img.shape[:2]
+## junk code for generate_homography_unwarp
+# h, w = img.shape[:2]
 
-    # # Define new corners points (fill in black space basically)
-    # corners_new = np.array([
-    #     [0, 0],
-    #     [0, w-1],
-    #     [h-1, w-1],
-    #     [h-1, 0]
-    # ], dtype=np.float32)
+# # Define new corners points (fill in black space basically)
+# corners_new = np.array([
+#     [0, 0],
+#     [0, w-1],
+#     [h-1, w-1],
+#     [h-1, 0]
+# ], dtype=np.float32)
 
-    # # Find corners in the warped image 
-    # corners_old = detect_corners(img)
-    # corners_old = sort_corners(corners_old)
+# # Find corners in the warped image 
+# corners_old = detect_corners(img)
+# corners_old = sort_corners(corners_old)
 
-    # # Compute the homography matrix
-    # H, _ = cv2.findHomography(corners_old, corners_new)
-    # return H
+# # Compute the homography matrix
+# H, _ = cv2.findHomography(corners_old, corners_new)
+# return H
